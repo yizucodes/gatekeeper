@@ -1,0 +1,55 @@
+---
+description: Superlinked SIE (Serverless) rules for the Gatekeeper project. Read before writing or changing any SIE call.
+alwaysApply: true
+---
+
+# SIE (Superlinked Inference Engine) rules
+
+## Do not guess the API
+Before writing or changing any SIE call, read the matching docs page as Markdown (append `.md` to the page URL) or via @Docs. If the docs do not confirm a field name, leave a `TODO(VERIFY)` comment and log the raw response. Never invent request or response fields.
+
+## Where the docs are
+- Index for AI tools: https://superlinked.com/llms.txt
+  - Abridged: https://superlinked.com/llms-small.txt (prefer this one for @Docs)
+  - Complete: https://superlinked.com/llms-full.txt (large; do not use as default context)
+- Any docs page as Markdown: append `.md`, e.g. https://superlinked.com/docs/cloud/sie-relay.md. The docs home is https://superlinked.com/docs/index.md
+- Model catalog (has an "On Serverless" filter and a decisions section): https://superlinked.com/models
+- Repos for examples: https://github.com/superlinked/sie (see examples/stripe-link-fraud and examples/decisions-local) and https://github.com/superlinked/cookbook
+
+## Pages to read for this project
+- Quickstart: https://superlinked.com/docs/quickstart
+- Choosing a model: https://superlinked.com/docs/choosing
+- Extract (entities, relations, classification): https://superlinked.com/docs/extract and https://superlinked.com/docs/extract/relations
+- OpenAI Decisions on SIE (primary scoring call): https://superlinked.com/docs/migrate/openai-decisions
+- Cold starts and SIE Relay: https://superlinked.com/docs/cloud/sie-relay
+- Rate limits: https://superlinked.com/docs/cloud/rate-limits
+- Retries over HTTP: https://superlinked.com/docs/cloud/retries
+- TypeScript SDK reference: https://superlinked.com/docs/reference/typescript-sdk
+- HTTP API reference: https://superlinked.com/docs/reference/api
+- Fraud-risk gate example (extract + encode + score pattern matching): https://superlinked.com/docs/examples/stripe-link-fraud
+
+## Project facts
+- Base URL: `https://api.superlinked.com`. OpenAI-compatible base: `https://api.superlinked.com/v1`.
+- API key lives in the `SIE_API_KEY` environment variable on the server only. Never send it to the browser and never commit it.
+- Primary scoring: `POST /v1/decisions` (OpenAI Decisions format) with predicate, choice and score questions batched in ONE request per transcript window. Model example from the docs: `fastino/GLiNER2.5-Decide`. Confirm it is available on Serverless in the model catalog.
+- Answers come back in question order. Map by index and assert the length. Predicate answers carry `probability`; choice answers carry `choice`; score answers carry `score`.
+- Input is text only and must fit the model window. Oversized input returns 400 and is never truncated. Keep windows to the last 6 caller utterances (about 1,500 characters).
+- TypeScript SDK for encode, score and extract: `@superlinked/sie-sdk`. For decisions, use the `openai` package with the SIE base URL if it exposes `decisions`, otherwise plain `fetch` with the same JSON body.
+
+## Live-path rules (the demo must never hang)
+- The SDK default is to wait for cold capacity for up to 900 seconds. The live scoring client must NOT do that. Disable waiting (`waitForCapacity: false`) or set a short `provisionTimeout` (about 1500 ms). On `ProvisioningError`, 503 `PROVISIONING`, 429 or timeout, fall back to the keyword scorer immediately and show `scorer: keyword`.
+- Use a separate warm-up client with waiting enabled.
+- Do not set `remote: "forbid"` on the live client. Relay answering during a cold start is a safety net.
+- Warm means served by dedicated capacity: response header `X-SIE-Served-By: local` (SDK: `result.request.servedBy === "local"`). `remote` with `X-SIE-Upstream: sie-relay` means it was relayed. Show this on the dashboard footer.
+- Dedicated capacity starts when sustained demand warrants it, so a single ping may not warm a model. Warm-up: starting about 20 minutes before a demo, send a light sustained loop (about 1 request per 2 seconds per model) until three consecutive responses report `local`, then drop to 1 per minute.
+
+## Rate limits (Serverless, per key)
+- Realtime endpoints (`/v1/encode`, `/v1/score`, `/v1/extract`, `/v1/embeddings`): 50 requests/s, 32 in flight.
+- Generation endpoints: 5 requests/s, 4 in flight.
+- `/v1/decisions` is not listed in that table. Confirm which limit applies.
+- A 429 carries `Retry-After` and `X-SIE-Error-Code: RATE_LIMIT`. Refused requests are not billed.
+- Our rules: at most one scoring request per 700 ms, at most 2 in flight, never run `scripts/bench.ts` against the live key during a demo.
+
+## Style
+- Wrap SIE access in one module (`gatekeeper/lib/server/risk.ts`) behind a small interface so the scorer can be swapped to the keyword fallback.
+- Log request id, status, latency and `servedBy` for every call.

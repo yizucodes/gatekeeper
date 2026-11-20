@@ -1,0 +1,8 @@
+{
+  "projectId": "0kkYYHZri",
+  "projectName": "Default Project",
+  "region": "global",
+  "template": "nextjs",
+  "scenario": "voice-agent",
+  "envPath": ".env.local"
+}
