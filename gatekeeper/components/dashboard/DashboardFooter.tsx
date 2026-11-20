@@ -7,10 +7,12 @@ export function DashboardFooter({
   scorer,
   latencyMs,
   verifierMode,
+  manualInterventions,
 }: {
   scorer?: ScorerName;
   latencyMs?: number;
   verifierMode?: VerifierMode;
+  manualInterventions?: number;
 }) {
   return (
     <footer className="flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-3 text-xs text-muted-foreground">
@@ -19,6 +21,7 @@ export function DashboardFooter({
         last score: {latencyMs !== undefined ? `${latencyMs} ms` : '-'}
       </span>
       <span>verifier: {verifierMode ?? '-'}</span>
+      <span>manual interventions: {manualInterventions ?? 0}</span>
     </footer>
   );
 }

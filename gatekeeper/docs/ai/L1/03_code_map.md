@@ -22,8 +22,26 @@ types/               Shared TypeScript route/component contracts
 - `stop-conversation/route.ts`: stops agent and handles idempotent already-stopping cases.
 - `chat/completions/route.ts`: optional OpenAI-compatible SSE proxy for custom LLM path.
 
+### Gatekeeper routes
+
+- `tools/check-status`, `tools/request-verification` (Grandma) and `tools/report-verification` (Verifier): Agora custom tool endpoints, guarded by `requireToolSecret`.
+- `transcript` (POST final turns from the browser, caller turns are scored) and `state` (GET, polled by the dashboard and family page).
+- `session/[id]/trail` (decision trail download) and `demo/simulate` (operator controls, `DEMO_MODE=true` only).
+- `invite-agent` and `stop-conversation` also register and end the Gatekeeper session; stopping the Verifier agent does not end the call.
+
+## Gatekeeper Server Logic (`lib/server`, server-only)
+
+- `store.ts`: in-memory sessions on `globalThis.__gatekeeper` (single local Node process). `config.ts`: env access. `http.ts`: tool secret and session lookup.
+- `prompts.ts`, `tools.ts`, `guidance.ts`: agent prompts, Agora tool definitions, action-only guidance and closing lines. Names never reach Grandma's LLM.
+- `agents.ts`: `startGrandma`, `startVerifierAgent`, `stopAgentSafe`.
+- `risk.ts` (scorer interface + keyword scorer), `policy.ts` (`evaluate` pure, `applyPolicy` side effects), `scoring.ts` (debounced run).
+- `verifier.ts` (launcher, watchdog, `startVerification`), `outcome.ts` (`finishVerification`, closing line via speak, stop Verifier).
+- `scenarios.ts`: scripted calls shared by `scripts/eval.ts` and the contract tests.
+
 ## Client Ownership (`components`)
 
+- `FamilyLanding.tsx` (`app/family`): family member answers the Verifier call in the `${sessionId}-verify` channel. `AgoraProvider.tsx`: shared RTC client provider.
+- `dashboard/*` (`app/dashboard`): TranscriptFeed, ScamMeter, EventTimeline, VerifiedCard, DemoPanel, DashboardFooter.
 - `LandingPage.tsx`: pre-call shell, token/invite/RTM bootstrap, conversation mount/unmount.
 - `ConversationComponent.tsx`: RTC join, mic publish, toolkit init, transcript/metrics/issues state.
 - `QuickstartConversationLayout.tsx`: in-call framing and slots.
@@ -34,12 +52,13 @@ types/               Shared TypeScript route/component contracts
 ## Shared Logic (`lib`)
 
 - `chat-completions.ts`: server-side custom LLM SSE handler factory, shared by the route and contract tests.
-- `agora.ts`: default constants (`DEFAULT_AGENT_UID`).
+- `agora.ts`: constants (`DEFAULT_AGENT_UID`, `VERIFIER_AGENT_UID`, `FAMILY_UID`, `verifyChannelName`). `gatekeeper-shared.ts`: risk keys and labels. `transcript-forwarder.ts`: browser-side final-turn forwarding.
 - `conversation.ts`: transcript normalization, spacing cleanup, timestamp normalization, visualizer state mapping.
 
 ## Validation and Tooling
 
-- `scripts/verify-api-contracts.ts`: imports route handlers and validates contract behavior.
+- `scripts/verify-api-contracts.ts`: imports route handlers and validates contract behavior (including tools, scorer, policy, verifier flow, trail, demo controls).
+- `scripts/eval.ts` (`pnpm eval`): replays scripted scenarios through scorer and policy, writes `eval_results.md`.
 - `scripts/doctor.mjs`: local setup checks consumed by `pnpm run doctor`.
 - `tailwind.config.ts`: includes `agora-agent-uikit` dist classes in content scan.
 

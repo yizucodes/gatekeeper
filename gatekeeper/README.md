@@ -94,6 +94,21 @@ Defined in [`env.local.example`](env.local.example).
 | `NEXT_PUBLIC_AGORA_APP_ID`   |    ✅    | Agora Console → Project → App ID.                                |
 | `NEXT_AGORA_APP_CERTIFICATE` |    ✅    | Agora Console → Project → App Certificate. **Server-side only.** |
 
+Gatekeeper adds these (all optional, but the tools and the family call need the first two):
+
+| Variable                                       | Required | Notes                                                                                                                  |
+| ---------------------------------------------- | :------: | ---------------------------------------------------------------------------------------------------------------------- |
+| `PUBLIC_BASE_URL`                              |    ⚠️    | Public **https** URL of this server (tunnel to `http://localhost:3000`), no trailing slash. Agora custom tools require it. Also used for the dashboard QR code. |
+| `TOOL_SECRET`                                  |    ⚠️    | Random value Agora sends in `x-tool-secret`; `/api/tools/*` reject anything else. Empty or `change-me` disables tools. |
+| `DEMO_GRANDMA_NAME` / `DEMO_FAMILY_NAME` / `DEMO_FAMILY_RELATION` |    -     | Demo persona (defaults Rosa / Alex / grandson). Never sent to Grandma's LLM.                                           |
+| `DEMO_MODE`                                    |    -     | `true` enables operator controls (`/dashboard?demo=1`, `POST /api/demo/simulate`). Leave unset on any public deployment. |
+| `AGORA_TELEPHONY_ENABLED`                      |    -     | Reserved for the outbound telephony adapter (not implemented; always falls back to the browser family call).           |
+
+Run Gatekeeper as one local Node process (`pnpm dev`) behind an HTTPS tunnel. Session state is in memory, so do not deploy it to a serverless host.
+
+Gatekeeper commands: `pnpm eval` replays 9 scripted calls through the scorer and policy and writes `eval_results.md`.
+Pages: `/call` (the caller), `/dashboard` (live view; add `?demo=1` for operator controls), `/family?session=<id>` (the family member's verification call).
+
 The default agent configuration in [`app/api/invite-agent/route.ts`](app/api/invite-agent/route.ts) uses Agora-managed STT, LLM, and TTS, so no extra vendor API keys are required for the base quickstart.
 
 ## Commands
@@ -162,7 +177,12 @@ NEXT_ELEVENLABS_VOICE_ID=...
 
 - `app/api/generate-agora-token/route.ts` — issues RTC + RTM tokens
 - `app/api/invite-agent/route.ts` — starts the agent session and configures the pipeline
-- `app/api/stop-conversation/route.ts` — stops the agent session
+- `app/api/stop-conversation/route.ts` — stops the agent session (stopping Grandma also ends the call and stops the Verifier)
+- `app/api/tools/{check-status,request-verification,report-verification}/route.ts` — Agora custom tool endpoints (`x-tool-secret` required)
+- `app/api/transcript/route.ts`, `app/api/state/route.ts` — final-turn ingest and dashboard state polling
+- `app/api/session/[id]/trail/route.ts` — decision trail download; `app/api/demo/simulate/route.ts` — operator controls (`DEMO_MODE`)
+- `app/call`, `app/dashboard`, `app/family` — caller page, live dashboard, family verification page
+- `lib/server/` — store, config, prompts, tools, agents, scorer, policy, verifier, outcome, scenarios (server-only)
 - `components/LandingPage.tsx` — entry point: token fetch, RTM login, conversation lifecycle
 - `components/ConversationComponent.tsx` — RTC client, transcript state, `AGENT_METRICS`, mic release
 - `components/QuickstartConversationLayout.tsx` — in-call header, transcript rail, controls dock

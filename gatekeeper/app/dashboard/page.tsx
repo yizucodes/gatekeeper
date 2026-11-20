@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { DemoPanel } from '@/components/dashboard/DemoPanel';
 import { DashboardFooter } from '@/components/dashboard/DashboardFooter';
 import { EventTimeline } from '@/components/dashboard/EventTimeline';
 import { ScamMeter } from '@/components/dashboard/ScamMeter';
@@ -13,11 +14,14 @@ const POLL_MS = 500;
 export default function DashboardPage() {
   const [state, setState] = useState<StateResponse | null>(null);
   const [offline, setOffline] = useState(false);
+  const [demo, setDemo] = useState(false);
   const inFlight = useRef(false);
 
   useEffect(() => {
     // Optional ?session=<id> pins the dashboard to one call; otherwise it follows the latest.
-    const pinned = new URLSearchParams(window.location.search).get('session');
+    const params = new URLSearchParams(window.location.search);
+    setDemo(params.get('demo') === '1');
+    const pinned = params.get('session');
     const url = pinned
       ? `/api/state?session=${encodeURIComponent(pinned)}`
       : '/api/state';
@@ -49,7 +53,16 @@ export default function DashboardPage() {
     <main className="mx-auto flex h-dvh max-w-7xl flex-col gap-4 bg-background p-4 text-foreground">
       <header className="flex items-baseline justify-between">
         <h1 className="text-xl font-semibold">Gatekeeper</h1>
-        <span className="text-xs text-muted-foreground">
+        <span className="flex items-baseline gap-3 text-xs text-muted-foreground">
+          {session && (
+            <a
+              href={`/api/session/${encodeURIComponent(session.id)}/trail`}
+              download
+              className="text-primary underline"
+            >
+              Download trail
+            </a>
+          )}
           {offline
             ? 'Server unreachable, retrying...'
             : session
@@ -76,6 +89,7 @@ export default function DashboardPage() {
               scamType={session.scamType}
             />
             <EventTimeline events={session.events} startedAt={session.createdAt} />
+            {demo && <DemoPanel sessionId={session.id} />}
           </div>
         </div>
       )}
@@ -84,6 +98,7 @@ export default function DashboardPage() {
         scorer={session?.scorer}
         latencyMs={session?.metrics.scoreLatencyMs}
         verifierMode={session?.verifierMode}
+        manualInterventions={session?.manualInterventions}
       />
     </main>
   );

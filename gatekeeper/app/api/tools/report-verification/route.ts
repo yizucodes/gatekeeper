@@ -1,15 +1,7 @@
 import { NextResponse } from 'next/server';
 import { guidanceFor } from '@/lib/server/guidance';
 import { logTool, requireToolSecret, sessionFromRequest } from '@/lib/server/http';
-import { finishVerification } from '@/lib/server/outcome';
-import type { Verification } from '@/types/gatekeeper';
-
-// Verifier result (tool argument) -> session verification state.
-const RESULT_MAP: Record<string, Exclude<Verification, 'none' | 'pending'>> = {
-  family_safe_did_not_call: 'confirmed_safe_family_not_caller',
-  family_confirms_they_called: 'family_confirms_call',
-  unclear: 'unreachable',
-};
+import { RESULT_MAP, finishVerification } from '@/lib/server/outcome';
 
 // Tool (Verifier): reportVerification. Idempotent: the first result wins.
 export async function POST(request: Request) {

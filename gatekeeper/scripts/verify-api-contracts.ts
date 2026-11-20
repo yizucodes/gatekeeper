@@ -882,6 +882,81 @@ async function verifyVerifierFlow() {
   }
 }
 
+async function verifyScenariosTrailAndDemo() {
+  const { SCENARIOS, runScenario, scenarioPassed } = await import('../lib/server/scenarios');
+  const { keywordScorer } = await import('../lib/server/risk');
+
+  // Every scripted scenario: scams caught in time, benign calls never red, injection flagged.
+  assert(
+    SCENARIOS.filter((s) => s.kind === 'scam').length === 6 &&
+      SCENARIOS.filter((s) => s.kind === 'benign').length === 3,
+    'there should be 6 scam and 3 benign scenarios',
+  );
+  for (const scenario of SCENARIOS) {
+    const result = await runScenario(scenario, keywordScorer);
+    assert(scenarioPassed(result), `scenario "${scenario.name}" should meet its expectation`);
+  }
+
+  const { createSession, getSession } = await import('../lib/server/store');
+  const { GET: getTrail } = await import('../app/api/session/[id]/trail/route');
+  const { POST: simulate } = await import('../app/api/demo/simulate/route');
+
+  const session = createSession('trail-demo-test', '8');
+  session.transcript.push({ speaker: 'caller', text: 'hello', ts: 1 });
+
+  // Trail export: full session incl. decisions, served as a download
+  let response = await getTrail(new Request('http://localhost:3000/x'), {
+    params: Promise.resolve({ id: 'trail-demo-test' }),
+  });
+  const trail = (await getJson(response)) as { session: { id: string; decisions: unknown[] } };
+  assert(
+    response.status === 200 &&
+      trail.session.id === 'trail-demo-test' &&
+      Array.isArray(trail.session.decisions) &&
+      (response.headers.get('content-disposition') ?? '').startsWith('attachment'),
+    'trail should download the full session including decisions',
+  );
+  response = await getTrail(new Request('http://localhost:3000/x'), {
+    params: Promise.resolve({ id: 'nope' }),
+  });
+  assert(response.status === 404, 'trail should 404 for an unknown session');
+
+  // Demo controls: disabled by default, then counted when used
+  const post = (payload: unknown) =>
+    simulate(
+      new Request('http://localhost:3000/api/demo/simulate', {
+        method: 'POST',
+        body: JSON.stringify({ session: 'trail-demo-test', ...(payload as object) }),
+      }),
+    );
+  delete process.env.DEMO_MODE;
+  assert((await post({ action: 'start_verification' })).status === 403, 'demo controls are off by default');
+  process.env.DEMO_MODE = 'true';
+  try {
+    assert((await post({ action: 'nope' })).status === 400, 'unknown demo action should be rejected');
+    assert((await post({ action: 'caller_line', text: '' })).status === 400, 'empty caller line should be rejected');
+    assert(getSession('trail-demo-test')?.manualInterventions === 0, 'rejected actions are not counted');
+
+    assert((await post({ action: 'start_verification' })).status === 200, 'operator can start verification');
+    assert((await post({ action: 'start_verification' })).status === 409, 'a second start is a conflict');
+    assert(
+      (await post({ action: 'verify_result', result: 'unclear' })).status === 200,
+      'operator can set the verification result',
+    );
+    const after = getSession('trail-demo-test');
+    assert(
+      after?.verification === 'unreachable' && after.manualInterventions === 2,
+      'accepted operator actions are counted',
+    );
+    assert(
+      after.events.filter((e) => e.type === 'manual_intervention').length === 2,
+      'each operator action is logged as an event',
+    );
+  } finally {
+    delete process.env.DEMO_MODE;
+  }
+}
+
 async function main() {
   const { setVerifierLauncher } = await import('../lib/server/verifier');
   // No test may start a real Verifier agent.
@@ -905,6 +980,7 @@ async function main() {
   await verifyKeywordScorerAndPolicy();
   await verifyTranscriptAndStateRoutes();
   await verifyVerifierFlow();
+  await verifyScenariosTrailAndDemo();
 
   console.log('API contract checks passed');
 }

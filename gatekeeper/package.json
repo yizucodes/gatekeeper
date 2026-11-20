@@ -13,6 +13,7 @@
     "start": "next start",
     "lint": "eslint .",
     "verify:api": "node --import tsx scripts/verify-api-contracts.ts",
+    "eval": "node --import tsx scripts/eval.ts",
     "typecheck": "tsc --noEmit",
     "verify": "pnpm run doctor && pnpm run lint && pnpm run typecheck && pnpm run verify:api && pnpm run build"
   },

@@ -94,3 +94,10 @@ Re-audit security docs when any of these change:
 
 - [conversation_lifecycle.md](L2/conversation_lifecycle.md) — Token issuance and renewal sequence details.
 - [transcript_pipeline.md](L2/transcript_pipeline.md) — RTM event surfaces and error propagation boundaries.
+
+## Gatekeeper additions
+
+- `/api/tools/*` accept only requests carrying `x-tool-secret` equal to `TOOL_SECRET` (constant-time compare). The secret is passed to Agora as a template variable and sent in a header, never placed in a prompt or tool argument.
+- Grandma's prompt, template variables and tool guidance contain no family names or profile data. Verifier template variables (`claimed_identity`, `caller_claim_summary`) come from the caller's words, so they are stripped of braces, quotes and newlines and length-bounded before use.
+- `/api/demo/simulate` can force a verification result: it returns 403 unless `DEMO_MODE=true`. Do not enable it on a shared tunnel.
+- Session ids are the RTC channel names (unguessable but not secret). The trail, state and family endpoints are unauthenticated demo endpoints; run behind a private tunnel and clear state by restarting the process.

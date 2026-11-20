@@ -10,6 +10,13 @@ const VERIFIER_STOP_DELAY_MS = 6000;
 
 type Resolved = Exclude<Verification, 'none' | 'pending'>;
 
+// Verifier result (reportVerification tool argument) -> session verification state.
+export const RESULT_MAP: Record<string, Resolved> = {
+  family_safe_did_not_call: 'confirmed_safe_family_not_caller',
+  family_confirms_they_called: 'family_confirms_call',
+  unclear: 'unreachable',
+};
+
 const EVENT_LABELS: Record<Resolved, { type: string; detail: string }> = {
   confirmed_safe_family_not_caller: {
     type: 'family_reached',

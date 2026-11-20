@@ -39,3 +39,9 @@ export function toolsDisabledReason(): string | null {
   }
   return null;
 }
+
+// Operator fallback controls (POST /api/demo/simulate). Off unless DEMO_MODE=true, because the
+// route can force a verification result and must not be reachable on a public tunnel by default.
+export function demoModeEnabled(): boolean {
+  return process.env.DEMO_MODE === 'true';
+}

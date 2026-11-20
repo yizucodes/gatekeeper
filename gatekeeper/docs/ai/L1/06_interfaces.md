@@ -49,6 +49,20 @@ Responses:
 
 Optional SSE proxy path (not default runtime path). Requires `NEXT_LLM_API_KEY` and `NEXT_LLM_URL` when used.
 
+### Gatekeeper routes
+
+Tool routes (`/api/tools/*`) require header `x-tool-secret` (401 on mismatch, 503 if `TOOL_SECRET` is unset) and `?session=<id>`; unknown session is 404 with safe default guidance.
+
+- `GET /api/tools/check-status` -> `{ risk_level, verification, guidance }`.
+- `POST /api/tools/request-verification` body `{ claimed_identity, claim_summary, tool_call_id? }` -> `{ ok, status, guidance }`; idempotent, starts the Verifier.
+- `POST /api/tools/report-verification` body `{ result: family_safe_did_not_call | family_confirms_they_called | unclear, note }` -> `{ ok, status, guidance }`; first result wins, pushes Grandma's closing line.
+- `POST /api/transcript` body `{ sessionId, speaker: caller | grandma | family, text, ts? }`; `400` invalid, `404` unknown session.
+- `GET /api/state?session=<id>` (default: latest) -> `StateResponse { session, callUrl, serverTime }`.
+- `GET /api/session/<id>/trail` -> JSON download of the full session including policy decisions.
+- `POST /api/demo/simulate` body `{ action: caller_line | start_verification | verify_result, ... }`; `403` unless `DEMO_MODE=true`; counts `manualInterventions`.
+
+Verification states: `none`, `pending`, `confirmed_safe_family_not_caller`, `family_confirms_call`, `unreachable`.
+
 ## Event/Data Interfaces
 
 - RTM transcript/state/metrics/errors consumed through `AgoraVoiceAI` event emitter.
@@ -61,6 +75,8 @@ Required:
 
 - `NEXT_PUBLIC_AGORA_APP_ID`
 - `NEXT_AGORA_APP_CERTIFICATE`
+
+Gatekeeper optional: `PUBLIC_BASE_URL` (https tunnel), `TOOL_SECRET`, `DEMO_GRANDMA_NAME`, `DEMO_FAMILY_NAME`, `DEMO_FAMILY_RELATION`, `DEMO_MODE`, `AGORA_TELEPHONY_ENABLED`. Without `PUBLIC_BASE_URL` (https) and `TOOL_SECRET` the agents start without tools.
 
 This is the complete base `.env.local` contract. The optional BYOK route and provider snippets use additional variables only when a developer explicitly enables them.
 
