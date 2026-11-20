@@ -1,5 +1,6 @@
 import type { Session, VerifierMode } from '@/types/gatekeeper';
 import { startVerifierAgent, type VerifierVars } from './agents';
+import { demoModeEnabled } from './config';
 import { armWatchdog, finishVerification, stopVerifier } from './outcome';
 import { addEvent, setHandle, setVerification } from './store';
 
@@ -76,6 +77,11 @@ export function setVerifierLauncher(launcher: VerifierLauncher | undefined) {
 }
 
 async function launch(session: Session): Promise<VerifierMode> {
+  // Test harness sessions (scripts/harness.ts, DEMO_MODE only) never start a real Verifier agent.
+  if (demoModeEnabled() && session.id.startsWith('harness-')) {
+    session.verifierAgentId = 'harness-verifier';
+    return 'browser';
+  }
   if (launcherOverride) {
     const { agentId } = await launcherOverride.start(session);
     session.verifierAgentId = agentId;

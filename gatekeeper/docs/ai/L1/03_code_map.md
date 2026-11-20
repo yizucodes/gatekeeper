@@ -58,6 +58,7 @@ types/               Shared TypeScript route/component contracts
 ## Validation and Tooling
 
 - `scripts/verify-api-contracts.ts`: imports route handlers and validates contract behavior (including tools, scorer, policy, verifier flow, trail, demo controls).
+- `scripts/harness.ts` (`pnpm harness [--spawn]`): HTTP end-to-end test of a running server using `harness-` sessions (no real agents).
 - `scripts/eval.ts` (`pnpm eval`): replays scripted scenarios through scorer and policy, writes `eval_results.md`.
 - `scripts/doctor.mjs`: local setup checks consumed by `pnpm run doctor`.
 - `tailwind.config.ts`: includes `agora-agent-uikit` dist classes in content scan.

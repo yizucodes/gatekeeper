@@ -82,7 +82,7 @@ export function armWatchdog(session: Session, ms: number) {
 
 export async function stopVerifier(session: Session): Promise<void> {
   const agentId = session.verifierAgentId;
-  if (!agentId) return;
+  if (!agentId || agentId === 'harness-verifier') return; // harness sessions have no real agent
   try {
     const result = await stopAgentSafe(agentId);
     addEvent(session, 'verifier_stopped', `Verifier agent ${result}`);

@@ -59,7 +59,7 @@ Tool routes (`/api/tools/*`) require header `x-tool-secret` (401 on mismatch, 50
 - `POST /api/transcript` body `{ sessionId, speaker: caller | grandma | family, text, ts? }`; `400` invalid, `404` unknown session.
 - `GET /api/state?session=<id>` (default: latest) -> `StateResponse { session, callUrl, serverTime }`.
 - `GET /api/session/<id>/trail` -> JSON download of the full session including policy decisions.
-- `POST /api/demo/simulate` body `{ action: caller_line | start_verification | verify_result, ... }`; `403` unless `DEMO_MODE=true`; counts `manualInterventions`.
+- `POST /api/demo/simulate` body `{ action: caller_line | start_verification | verify_result, ... }`; `403` unless `DEMO_MODE=true`; counts `manualInterventions`. The extra action `new_session` (session id must start with `harness-`) registers a session for `scripts/harness.ts`, is not counted, and such sessions never start a real Verifier agent.
 
 Verification states: `none`, `pending`, `confirmed_safe_family_not_caller`, `family_confirms_call`, `unreachable`.
 

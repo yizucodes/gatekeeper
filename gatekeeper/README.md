@@ -106,7 +106,7 @@ Gatekeeper adds these (all optional, but the tools and the family call need the 
 
 Run Gatekeeper as one local Node process (`pnpm dev`) behind an HTTPS tunnel. Session state is in memory, so do not deploy it to a serverless host.
 
-Gatekeeper commands: `pnpm eval` replays 9 scripted calls through the scorer and policy and writes `eval_results.md`.
+Gatekeeper commands: `pnpm eval` replays 9 scripted calls through the scorer and policy and writes `eval_results.md`. `pnpm harness --spawn` (after `pnpm build`) starts a server and plays the same 9 calls over HTTP through `/api/transcript`, the tool routes, state and the trail export; without `--spawn` it tests a server you already run (needs `DEMO_MODE=true` and `TOOL_SECRET`). It does not cover audio or the Agora agent join.
 Pages: `/call` (the caller), `/dashboard` (live view; add `?demo=1` for operator controls), `/family?session=<id>` (the family member's verification call).
 
 The default agent configuration in [`app/api/invite-agent/route.ts`](app/api/invite-agent/route.ts) uses Agora-managed STT, LLM, and TTS, so no extra vendor API keys are required for the base quickstart.

@@ -2,7 +2,13 @@ import { NextResponse } from 'next/server';
 import { demoModeEnabled } from '@/lib/server/config';
 import { RESULT_MAP, finishVerification } from '@/lib/server/outcome';
 import { scheduleScoring } from '@/lib/server/scoring';
-import { addEvent, addTranscript, getLatestSession, getSession } from '@/lib/server/store';
+import {
+  addEvent,
+  addTranscript,
+  createSession,
+  getLatestSession,
+  getSession,
+} from '@/lib/server/store';
 import { startVerification } from '@/lib/server/verifier';
 
 const MAX_TEXT_LENGTH = 500;
@@ -23,6 +29,17 @@ export async function POST(request: Request) {
   }
 
   const sessionId = typeof body.session === 'string' ? body.session : undefined;
+
+  // Test harness hook (scripts/harness.ts): register a session without starting an Agora agent.
+  // Only ids starting with "harness-" are accepted, and it is not a manual intervention.
+  if (body.action === 'new_session') {
+    if (!sessionId?.startsWith('harness-')) {
+      return NextResponse.json({ error: 'new_session needs a session id starting with "harness-"' }, { status: 400 });
+    }
+    createSession(sessionId, 'harness');
+    return NextResponse.json({ ok: true, session: sessionId });
+  }
+
   const session = sessionId ? getSession(sessionId) : getLatestSession();
   if (!session) {
     return NextResponse.json({ error: 'No active session' }, { status: 404 });
