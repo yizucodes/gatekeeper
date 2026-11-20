@@ -1,6 +1,6 @@
 # Gatekeeper eval results
 
-Generated 2026-11-20T22:48:50.725Z by `pnpm eval`.
+Generated 2026-11-20T23:18:55.544Z by `pnpm eval`.
 
 | Scenario | Kind | Turned red at | Final | Injection | Avg score time | Result |
 | --- | --- | --- | --- | --- | --- | --- |

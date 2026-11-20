@@ -9,6 +9,9 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  // Dev only: allow the ngrok tunnel to load Next's dev assets and HMR socket. Without this the
+  // page can be blocked or spam websocket errors when opened through the tunnel URL.
+  allowedDevOrigins: ['*.ngrok-free.app', '*.ngrok-free.dev', '*.ngrok.app', '*.ngrok.io'],
   turbopack: {
     root: rootDir,
   },
