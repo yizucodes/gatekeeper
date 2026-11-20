@@ -23,11 +23,11 @@ export function QuickstartPreCallCard({
       }}
     >
       <h1 className="text-[28px] font-medium leading-[1.2] text-white">
-        Try Agora&apos;s Voice Agent
+        Gatekeeper
       </h1>
       <p className="mt-[14px] text-sm font-medium leading-6 text-muted-foreground">
-        Built on Agora&apos;s flagship Conversational AI engine, for effortless
-        agentic conversations.
+        An AI answers Grandma&apos;s phone. Try to scam her, and watch it check
+        with her family instead.
       </p>
 
       <Button
@@ -36,20 +36,24 @@ export function QuickstartPreCallCard({
         className="mt-12 h-10 w-full rounded-lg border border-primary bg-primary text-sm font-medium text-black hover:border-white hover:bg-white hover:text-black disabled:hover:border-primary disabled:hover:bg-primary disabled:hover:text-black"
         aria-label={
           isLoading
-            ? 'Starting conversation with AI agent'
-            : 'Start conversation with AI agent'
+            ? "Calling Grandma's line"
+            : "Call Grandma's line"
         }
       >
         {isLoading ? (
           <>
             <Loader2 className="h-4 w-4 animate-spin" />
-            Starting...
+            Calling...
           </>
         ) : (
-          'Start Conversation'
+          "Call Grandma's line"
         )}
       </Button>
       {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
+      <p className="mt-5 text-[11px] leading-4 text-muted-foreground">
+        You&apos;re talking to an AI demo. Your voice is transcribed for the
+        live dashboard. Nothing is stored after the event.
+      </p>
     </div>
   );
 }

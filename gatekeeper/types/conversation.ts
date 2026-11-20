@@ -1,4 +1,5 @@
 import type { RTMClient } from 'agora-rtm';
+import type { TranscriptForwardingOptions } from '@/lib/transcript-forwarder';
 
 export interface AgoraTokenData {
   token: string;
@@ -28,6 +29,10 @@ export interface AgoraRenewalTokens {
 }
 
 export interface ConversationComponentProps {
+  // Gatekeeper: RTC uid of the agent in this channel (defaults to DEFAULT_AGENT_UID).
+  agentUid?: string;
+  // Gatekeeper: forward final turns to POST /api/transcript.
+  transcriptForwarding?: TranscriptForwardingOptions;
   agoraData: AgoraTokenData;
   rtmClient: RTMClient;
   onTokenWillExpire: (uid: string) => Promise<AgoraRenewalTokens>;

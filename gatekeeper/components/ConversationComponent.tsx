@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AgoraRTC, {
   useRTCClient,
   useLocalMicrophoneTrack,
@@ -44,6 +44,7 @@ import {
 } from './QuickstartPipelineMetrics';
 import { QuickstartTranscriptPanel } from './QuickstartTranscriptPanel';
 import type { ConversationComponentProps } from '@/types/conversation';
+import { createTranscriptForwarder } from '@/lib/transcript-forwarder';
 
 // Cap the displayed issues list to avoid overwhelming the UI during a cascade of errors.
 const MAX_CONNECTION_ISSUES = 6;
@@ -91,6 +92,8 @@ function isRtmSalStatusPayload(value: unknown): value is RtmSalStatusPayload {
 }
 
 export default function ConversationComponent({
+  agentUid,
+  transcriptForwarding,
   agoraData,
   rtmClient,
   onTokenWillExpire,
@@ -105,7 +108,7 @@ export default function ConversationComponent({
   // Tracks granular RTC connection state for the status dot.
   // Agora states: DISCONNECTED | CONNECTING | CONNECTED | DISCONNECTING | RECONNECTING
   const [connectionState, setConnectionState] = useState<string>('CONNECTING');
-  const agentUID = String(DEFAULT_AGENT_UID);
+  const agentUID = String(agentUid ?? DEFAULT_AGENT_UID);
   const [joinedUID, setJoinedUID] = useState<UID>(0);
 
   // Transcript + agent state — managed with AgoraVoiceAI (see effect below).
@@ -364,6 +367,30 @@ export default function ConversationComponent({
   const transcript = useMemo(() => {
     return normalizeTranscript(rawTranscript, String(client.uid));
   }, [rawTranscript, client.uid]);
+
+  // Gatekeeper: forward final turns to the backend. The forwarder dedupes by uid:turn_id and lives
+  // in a ref (created once per session) so re-renders and StrictMode never re-send turns.
+  const forwarderRef = useRef<{
+    sessionId: string;
+    forward: ReturnType<typeof createTranscriptForwarder>;
+  } | null>(null);
+  useEffect(() => {
+    if (!transcriptForwarding || !joinSuccess) return;
+    if (
+      !forwarderRef.current ||
+      forwarderRef.current.sessionId !== transcriptForwarding.sessionId
+    ) {
+      forwarderRef.current = {
+        sessionId: transcriptForwarding.sessionId,
+        forward: createTranscriptForwarder({
+          ...transcriptForwarding,
+          localUid: String(client.uid),
+          agentUid: agentUID,
+        }),
+      };
+    }
+    forwarderRef.current.forward(transcript);
+  }, [transcript, transcriptForwarding, joinSuccess, client, agentUID]);
 
   // Completed (END + INTERRUPTED) messages shown as history.
   // INTERRUPTED must be included — if the agent's first turn is cut off,

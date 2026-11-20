@@ -92,6 +92,13 @@ export interface StateSnapshot extends Omit<Session, 'decisions'> {
   profile: { grandmaName: string; familyName: string; familyRelation: string };
 }
 
+export interface StateResponse {
+  session: StateSnapshot | null;
+  // Public URL of the /call page (for the QR code), or null when PUBLIC_BASE_URL is unset.
+  callUrl: string | null;
+  serverTime: number;
+}
+
 export interface ToolStatusResponse {
   risk_level: RiskLevel;
   verification: Verification;

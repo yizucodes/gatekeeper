@@ -614,6 +614,107 @@ async function verifyInviteAgentRegistersSession() {
   }
 }
 
+async function verifyKeywordScorerAndPolicy() {
+  const { buildWindow, keywordScore } = await import('../lib/server/risk');
+  const { evaluate } = await import('../lib/server/policy');
+
+  const scripts: Record<string, string[]> = {
+    'grandchild in jail': [
+      'Grandma? It is me... I am in trouble, I got arrested.',
+      "Please don't tell Mom.",
+      'I need $2,000 for bail today, can you get gift cards?',
+    ],
+    'fake FBI': [
+      'This is Special Agent Miller with the FBI.',
+      'Your identity was used to buy illegal firearms.',
+      "To avoid arrest you must move your savings to a safe account today. Don't tell anyone.",
+    ],
+    'fake utility': [
+      'This is your electric company, your account is past due.',
+      'We disconnect in 30 minutes.',
+      'Pay $480 now with a prepaid card or a Bitcoin ATM.',
+    ],
+  };
+
+  for (const [name, lines] of Object.entries(scripts)) {
+    const transcript: { speaker: 'caller'; text: string }[] = [];
+    let redAt = 0;
+    lines.forEach((text, i) => {
+      transcript.push({ speaker: 'caller', text });
+      const { scores } = keywordScore(buildWindow(transcript));
+      if (!redAt && evaluate(scores).riskLevel === 'red') redAt = i + 1;
+    });
+    assert(redAt > 0 && redAt <= 3, `Script "${name}" should reach red by caller line 3`);
+  }
+
+  const benign = keywordScore('Hey Rosa, it is Dan next door. Can I borrow your ladder this weekend?');
+  assert(
+    evaluate(benign.scores).riskLevel === 'green',
+    'A friendly neighbour call should stay green',
+  );
+
+  // Policy ratchet: the risk level never drops once raised.
+  const { createSession, getSession } = await import('../lib/server/store');
+  const { applyPolicy } = await import('../lib/server/policy');
+  const { emptyScores } = await import('../lib/gatekeeper-shared');
+  const session = createSession('policy-ratchet-test', '1');
+  await applyPolicy(session, {
+    scores: { ...emptyScores(), payment_demand: 0.9 },
+    scorer: 'keyword',
+    window: 'gift cards',
+  });
+  assert(session.riskLevel === 'red', 'payment demand should make the call red');
+  assert(
+    session.verification === 'pending' &&
+      session.events.some((e) => e.detail.includes('triggered automatically')),
+    'red should trigger verification automatically',
+  );
+  await applyPolicy(session, { scores: emptyScores(), scorer: 'keyword', window: 'hello' });
+  assert(
+    getSession('policy-ratchet-test')?.riskLevel === 'red',
+    'risk level must not drop after it was raised',
+  );
+}
+
+async function verifyTranscriptAndStateRoutes() {
+  const { POST: postTranscript } = await import('../app/api/transcript/route');
+  const { GET: getState } = await import('../app/api/state/route');
+  const { createSession, getSession } = await import('../lib/server/store');
+  createSession('transcript-test', '9');
+
+  const post = (payload: unknown) =>
+    postTranscript(
+      new Request('http://localhost:3000/api/transcript', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    );
+
+  assert((await post({ sessionId: 'transcript-test', speaker: 'robot', text: 'x' })).status === 400,
+    'transcript should reject an unknown speaker');
+  assert((await post({ sessionId: 'nope', speaker: 'caller', text: 'hi' })).status === 404,
+    'transcript should 404 for an unknown session');
+  assert((await post({ sessionId: 'transcript-test', speaker: 'grandma', text: 'Hello dear' })).status === 200,
+    'transcript should accept a grandma line');
+  assert((await post({ sessionId: 'transcript-test', speaker: 'caller', text: 'Hi Grandma' })).status === 200,
+    'transcript should accept a caller line');
+  assert(getSession('transcript-test')?.transcript.length === 2, 'transcript lines should be stored');
+
+  const response = await getState(
+    new Request('http://localhost:3000/api/state?session=transcript-test'),
+  );
+  const body = (await getJson(response)) as {
+    session: { id: string; transcript: unknown[]; profile: { familyName: string } } | null;
+  };
+  assert(response.status === 200 && body.session?.id === 'transcript-test', 'state should return the session');
+  assert(body.session?.transcript.length === 2, 'state should include the transcript');
+  assert(typeof body.session?.profile.familyName === 'string', 'state should include the profile for the dashboard');
+  assert(
+    !('decisions' in (body.session as object)),
+    'state should not include the decision trail',
+  );
+}
+
 async function main() {
   await verifyGenerateAgoraTokenRoute();
   await verifyGenerateAgoraTokenReplacesZeroUid();
@@ -627,6 +728,8 @@ async function main() {
   await verifyGrandmaToolDefinitions();
   await verifyToolRoutes();
   await verifyInviteAgentRegistersSession();
+  await verifyKeywordScorerAndPolicy();
+  await verifyTranscriptAndStateRoutes();
 
   console.log('API contract checks passed');
 }

@@ -1,6 +1,13 @@
 'use client';
 
-import { useState, useRef, Suspense, useEffect, useCallback } from 'react';
+import {
+  useState,
+  useRef,
+  useMemo,
+  Suspense,
+  useEffect,
+  useCallback,
+} from 'react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import type { RTMClient } from 'agora-rtm';
@@ -68,6 +75,20 @@ export default function LandingPage() {
   const [agoraData, setAgoraData] = useState<AgoraTokenData | null>(null);
   const [rtmClient, setRtmClient] = useState<RTMClient | null>(null);
   const [agentJoinError, setAgentJoinError] = useState(false);
+
+  // Gatekeeper: forward final turns to the backend. Session id = RTC channel name.
+  const channel = agoraData?.channel;
+  const transcriptForwarding = useMemo(
+    () =>
+      channel
+        ? {
+            sessionId: channel,
+            localSpeaker: 'caller' as const,
+            agentSpeaker: 'grandma' as const,
+          }
+        : undefined,
+    [channel],
+  );
 
   const handleStartConversation = async () => {
     setIsLoading(true);
@@ -238,6 +259,7 @@ export default function LandingPage() {
                 <ErrorBoundary>
                   <AgoraProvider>
                     <ConversationComponent
+                      transcriptForwarding={transcriptForwarding}
                       agoraData={agoraData}
                       rtmClient={rtmClient}
                       onTokenWillExpire={handleTokenWillExpire}
