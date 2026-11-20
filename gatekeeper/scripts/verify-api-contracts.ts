@@ -14,6 +14,8 @@ function getJson(response: Response) {
 
 process.env.NEXT_PUBLIC_AGORA_APP_ID = '0123456789abcdef0123456789abcdef';
 process.env.NEXT_AGORA_APP_CERTIFICATE = 'fedcba9876543210fedcba9876543210';
+process.env.PUBLIC_BASE_URL = 'https://gatekeeper.example.test';
+process.env.TOOL_SECRET = 'test-tool-secret';
 
 async function verifyGenerateAgoraTokenRoute() {
   const { GET: generateAgoraToken } =
@@ -445,6 +447,173 @@ async function verifyStopConversationSuccess() {
   }
 }
 
+const TOOL_HEADERS = { 'x-tool-secret': 'test-tool-secret' };
+
+async function verifyGrandmaToolDefinitions() {
+  const { grandmaTools } = await import('../lib/server/tools');
+  const tools = grandmaTools('https://gatekeeper.example.test');
+  const names = tools.map((t) => t.function.name);
+
+  assert(
+    JSON.stringify(names) === JSON.stringify(['checkStatus', 'requestVerification']),
+    'Grandma should expose exactly checkStatus and requestVerification',
+  );
+  for (const tool of tools) {
+    assert(
+      /^[A-Za-z][A-Za-z0-9]*$/.test(tool.function.name),
+      'Tool names must be letters and numbers only, starting with a letter',
+    );
+    assert(
+      tool.server.url.startsWith('https://'),
+      'Tool URLs must be absolute https URLs',
+    );
+    assert(
+      tool.server.headers?.['x-tool-secret'] === '{{template_variables.tool_secret}}',
+      'Tool secret must be a complete template_variables header value',
+    );
+    assert(
+      !Object.values(tool.server.headers ?? {}).some((v) => v.includes('{{args.')),
+      'Headers must not use {{args.*}}',
+    );
+  }
+  assert(
+    tools[0].server.method === 'GET' && tools[0].server.body === undefined,
+    'checkStatus must be a GET without a body',
+  );
+}
+
+async function verifyToolRoutes() {
+  const { GET: checkStatus } = await import('../app/api/tools/check-status/route');
+  const { POST: requestVerification } = await import(
+    '../app/api/tools/request-verification/route'
+  );
+  const { createSession, getSession } = await import('../lib/server/store');
+  const sessionId = 'contract-test-session';
+  createSession(sessionId, '4321');
+
+  // Missing or wrong secret -> 401
+  let response = await checkStatus(
+    new Request(`http://localhost:3000/api/tools/check-status?session=${sessionId}`),
+  );
+  assert(response.status === 401, 'check-status should reject a missing secret');
+  response = await checkStatus(
+    new Request(`http://localhost:3000/api/tools/check-status?session=${sessionId}`, {
+      headers: { 'x-tool-secret': 'wrong' },
+    }),
+  );
+  assert(response.status === 401, 'check-status should reject a wrong secret');
+  response = await requestVerification(
+    new Request(`http://localhost:3000/api/tools/request-verification?session=${sessionId}`, {
+      method: 'POST',
+      body: JSON.stringify({ claimed_identity: 'x', claim_summary: 'y' }),
+    }),
+  );
+  assert(response.status === 401, 'request-verification should reject a missing secret');
+
+  // Unknown session -> 404 with safe default guidance
+  response = await checkStatus(
+    new Request('http://localhost:3000/api/tools/check-status?session=nope', {
+      headers: TOOL_HEADERS,
+    }),
+  );
+  let body = await getJson(response);
+  assert(response.status === 404, 'check-status should 404 for an unknown session');
+  assert(typeof body.guidance === 'string', '404 should still carry default guidance');
+
+  // check-status returns the three documented keys
+  response = await checkStatus(
+    new Request(`http://localhost:3000/api/tools/check-status?session=${sessionId}`, {
+      headers: TOOL_HEADERS,
+    }),
+  );
+  body = await getJson(response);
+  assert(response.status === 200, 'check-status should return 200');
+  assert(
+    body.risk_level === 'green' &&
+      body.verification === 'none' &&
+      typeof body.guidance === 'string',
+    'check-status should return risk_level, verification and guidance',
+  );
+
+  // request-verification validates, records, sets pending, and is idempotent
+  response = await requestVerification(
+    new Request(`http://localhost:3000/api/tools/request-verification?session=${sessionId}`, {
+      method: 'POST',
+      headers: TOOL_HEADERS,
+      body: JSON.stringify({ claimed_identity: 'grandson' }),
+    }),
+  );
+  assert(response.status === 400, 'request-verification should require both arguments');
+
+  const goodRequest = () =>
+    new Request(`http://localhost:3000/api/tools/request-verification?session=${sessionId}`, {
+      method: 'POST',
+      headers: TOOL_HEADERS,
+      body: JSON.stringify({
+        claimed_identity: 'grandson',
+        claim_summary: 'Says he is in jail and needs bail money',
+        tool_call_id: 'call-1',
+      }),
+    });
+  response = await requestVerification(goodRequest());
+  body = await getJson(response);
+  assert(
+    response.status === 200 && body.ok === true && body.status === 'pending',
+    'request-verification should return ok/pending',
+  );
+  assert(
+    getSession(sessionId)?.verification === 'pending' &&
+      getSession(sessionId)?.claim?.claimedIdentity === 'grandson',
+    'request-verification should record the claim and set pending',
+  );
+  const startedAt = getSession(sessionId)?.metrics.verifyStartedAt;
+  response = await requestVerification(goodRequest());
+  body = await getJson(response);
+  assert(body.status === 'pending', 'request-verification should be idempotent');
+  assert(
+    getSession(sessionId)?.metrics.verifyStartedAt === startedAt,
+    'a repeated request must not restart verification',
+  );
+
+  // Guidance must never contain the demo family name (handoff section 20.2)
+  response = await checkStatus(
+    new Request(`http://localhost:3000/api/tools/check-status?session=${sessionId}`, {
+      headers: TOOL_HEADERS,
+    }),
+  );
+  body = await getJson(response);
+  assert(
+    !String(body.guidance).includes('Alex') && body.verification === 'pending',
+    'check-status guidance must not include family names',
+  );
+}
+
+async function verifyInviteAgentRegistersSession() {
+  const { POST: inviteAgent } = await import('../app/api/invite-agent/route');
+  const { getSession } = await import('../lib/server/store');
+  const originalCreateSession = Agent.prototype.createSession;
+  Agent.prototype.createSession = (() => ({
+    start: async () => 'mock-grandma-id',
+  })) as unknown as typeof Agent.prototype.createSession;
+
+  try {
+    const response = await inviteAgent(
+      new NextRequest('http://localhost:3000/api/invite-agent', {
+        body: JSON.stringify({ requester_id: '777', channel_name: 'gk-register-test' }),
+        method: 'POST',
+      }),
+    );
+    assert(response.status === 200, 'invite-agent should still return 200');
+    const session = getSession('gk-register-test');
+    assert(
+      session?.grandmaAgentId === 'mock-grandma-id' && session.callerUid === '777',
+      'invite-agent should register the call in the store keyed by channel',
+    );
+  } finally {
+    Agent.prototype.createSession = originalCreateSession;
+  }
+}
+
 async function main() {
   await verifyGenerateAgoraTokenRoute();
   await verifyGenerateAgoraTokenReplacesZeroUid();
@@ -455,6 +624,9 @@ async function main() {
   await verifyInviteAgentSuccess();
   await verifyStopConversationValidation();
   await verifyStopConversationSuccess();
+  await verifyGrandmaToolDefinitions();
+  await verifyToolRoutes();
+  await verifyInviteAgentRegistersSession();
 
   console.log('API contract checks passed');
 }
