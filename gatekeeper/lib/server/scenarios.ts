@@ -87,6 +87,28 @@ export const SCENARIOS: Scenario[] = [
     ],
   },
   {
+    id: 'police-station',
+    name: 'Grandchild at the police station (no amount)',
+    kind: 'scam',
+    expectRedByLine: 3,
+    lines: [
+      "Hi grandma, it's me.",
+      "I messed up and I'm at the police station.",
+      'I need you to send me some money to get out.',
+    ],
+  },
+  {
+    id: 'bank-fraud-code',
+    name: 'Fake bank fraud department (code request)',
+    kind: 'scam',
+    expectRedByLine: 3,
+    lines: [
+      "I'm calling from your bank's fraud department.",
+      'Someone tried to take money from your account.',
+      'I need you to read me the code we just texted you.',
+    ],
+  },
+  {
     id: 'neighbour-ladder',
     name: 'Neighbour borrowing a ladder',
     kind: 'benign',
@@ -114,6 +136,26 @@ export const SCENARIOS: Scenario[] = [
       "Hi Grandma, it's me! Just calling to say hello.",
       'How did your doctor appointment go?',
       "That's great. I'll visit on Saturday and bring cookies.",
+    ],
+  },
+  {
+    id: 'birthday-money',
+    name: 'Grandchild thanking for birthday money',
+    kind: 'benign',
+    lines: [
+      "Hi Grandma, it's me!",
+      'Thank you so much for the birthday money.',
+      "I'm going to buy a new bike with it. Love you!",
+    ],
+  },
+  {
+    id: 'pharmacy-confirm',
+    name: 'Pharmacy confirming address and birth date',
+    kind: 'benign',
+    lines: [
+      'Hello, this is the pharmacy on Main Street.',
+      'Can I confirm your address and date of birth for the delivery?',
+      'Your prescription will arrive tomorrow morning. Thank you.',
     ],
   },
 ];

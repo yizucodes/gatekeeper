@@ -41,6 +41,9 @@ const RULES: KeywordRule[] = [
   // payment_demand
   { key: 'payment_demand', score: 0.9, pattern: /gift ?cards?|bitcoin|crypto(currency)?|wire (transfer|money|it|the)|western union|prepaid|money order|cash (app|courier)|zelle|\bbail\b/ },
   { key: 'payment_demand', score: 0.85, pattern: /\b(send|pay|need|owe|transfer|wire|get|buy)\b[^.?!]{0,40}\$\s?\d/ },
+  // Natural phrasing without an amount: "send me some money", "give me a little cash", "help me out with money".
+  // At most three filler words between "me" and the money word, so "give me a call back, I'll bring money" does not match.
+  { key: 'payment_demand', score: 0.85, pattern: /\b(send|give|wire|transfer|get|lend|loan|mail|venmo|zelle)\b\s+(?:[\w']+\s+){0,2}?(me|us)\s+(?:[\w']+,?\s+){0,3}?(money|cash|funds|dollars|bucks)\b|\bhelp me out with\b[^.?!]{0,20}\b(money|cash)\b/ },
   { key: 'payment_demand', score: 0.85, pattern: /safe account|move your (savings|money|funds)|transfer your (savings|money|funds)/ },
   { key: 'payment_demand', score: 0.55, pattern: /\$\s?\d{3,}/ },
   // secrecy
@@ -55,7 +58,10 @@ const RULES: KeywordRule[] = [
   // business_claim
   { key: 'business_claim', score: 0.7, pattern: /electric company|power company|utility|gas company|water company|your bank|tech(nical)? support|microsoft|apple support|virus|malware|your computer|account (is )?(past due|overdue|suspended|locked|compromised)|past due|overdue/ },
   // info_request
-  { key: 'info_request', score: 0.85, pattern: /social security number|\bssn\b|bank (account|details)|account number|routing number|\bpin\b|password|credit card|card number|verification code|one[- ]time (code|passcode)|(read|give|tell|share|send) me\b[^.?!]{0,30}(code|address|number|password)|(your|her) address|date of birth|maiden name/ },
+  // Credentials and account details are red on their own (see policy.ts). Ordinary identity details
+  // that legitimate callers (a pharmacy, a clinic) also ask for stay at amber.
+  { key: 'info_request', score: 0.85, pattern: /social security number|\bssn\b|bank (account|details)|account number|routing number|\bpin\b|password|credit card|card number|verification code|one[- ]time (code|passcode)|(read|give|tell|share|send) me\b[^.?!]{0,30}(code|number|password)/ },
+  { key: 'info_request', score: 0.6, pattern: /(your|her) address|date of birth|maiden name/ },
   { key: 'info_request', score: 0.6, pattern: /install (this|an?|the) (app|software|program)|remote (access|desktop)|anydesk|teamviewer/ },
   // injection
   { key: 'injection', score: 0.95, pattern: /ignore (all |any |your |the |my )?(previous |prior |above |earlier )*(instructions|rules|prompt)|disregard (your|the|all)|admin mode|developer mode|system prompt|reveal your (instructions|prompt)/ },
@@ -65,7 +71,7 @@ const RULES: KeywordRule[] = [
 const FAMILY_IDENTITY =
   /it'?s me\b|this is (your )?(grandson|granddaughter|grandchild|son|daughter|nephew|niece)|grandma\?/;
 const FAMILY_TROUBLE =
-  /trouble|\bjail\b|arrest|accident|hospital|\bbail\b|lawyer|stranded|hurt|crash/;
+  /trouble|\bjail\b|arrest|\bpolice\b|accident|hospital|\bbail\b|lawyer|stranded|hurt|crash/;
 const ROMANCE = /sweetheart|my love|\bdarling\b|miss you|flight to see you/;
 const TECH_WORDS = /virus|malware|your computer|tech(nical)? support|microsoft|apple support|install/;
 

@@ -647,6 +647,24 @@ async function verifyKeywordScorerAndPolicy() {
     assert(redAt > 0 && redAt <= 3, `Script "${name}" should reach red by caller line 3`);
   }
 
+  // Credential requests are red alone; routine identity questions are not.
+  assert(
+    evaluate(keywordScore('Please read me the code we just texted you.').scores).riskLevel === 'red',
+    'a verification code request should be red on its own',
+  );
+  assert(
+    evaluate(keywordScore('Can I confirm your address and date of birth?').scores).riskLevel !== 'red',
+    'a routine address and birth date check should not be red',
+  );
+  assert(
+    evaluate(keywordScore('Can you send me some money to get out?').scores).riskLevel === 'red',
+    'asking to send money without an amount should be red',
+  );
+  assert(
+    evaluate(keywordScore("Give me a call back, I'll bring money on Sunday.").scores).riskLevel !== 'red',
+    'a harmless "give me a call back ... money" line should not be red',
+  );
+
   const benign = keywordScore('Hey Rosa, it is Dan next door. Can I borrow your ladder this weekend?');
   assert(
     evaluate(benign.scores).riskLevel === 'green',
@@ -888,9 +906,9 @@ async function verifyScenariosTrailAndDemo() {
 
   // Every scripted scenario: scams caught in time, benign calls never red, injection flagged.
   assert(
-    SCENARIOS.filter((s) => s.kind === 'scam').length === 6 &&
-      SCENARIOS.filter((s) => s.kind === 'benign').length === 3,
-    'there should be 6 scam and 3 benign scenarios',
+    SCENARIOS.filter((s) => s.kind === 'scam').length === 8 &&
+      SCENARIOS.filter((s) => s.kind === 'benign').length === 5,
+    'there should be 8 scam and 5 benign scenarios',
   );
   for (const scenario of SCENARIOS) {
     const result = await runScenario(scenario, keywordScorer);

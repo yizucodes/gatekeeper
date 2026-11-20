@@ -38,6 +38,9 @@ export function evaluate(
   if (scores.payment_demand >= red) reasons.push('payment demand');
   if (scores.secrecy >= red) reasons.push('asks for secrecy');
   if (scores.injection >= red) reasons.push('prompt-injection attempt');
+  // Credentials (codes, passwords, account or Social Security numbers) are never a reasonable ask
+  // from an unknown caller, so this is red on its own. Routine identity details score lower.
+  if (scores.info_request >= red) reasons.push('asks for codes or account details');
   if (scores.authority_claim >= red && pressured) {
     reasons.push('authority claim with urgency or payment demand');
   }
