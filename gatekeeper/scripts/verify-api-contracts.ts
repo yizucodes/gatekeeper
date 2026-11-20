@@ -715,7 +715,181 @@ async function verifyTranscriptAndStateRoutes() {
   );
 }
 
+async function verifyVerifierFlow() {
+  const { verifierTools } = await import('../lib/server/tools');
+  const { cleanVar, VERIFIER_PROMPT, VERIFIER_GREETING } = await import('../lib/server/prompts');
+  const { deriveClaim, startVerification } = await import('../lib/server/verifier');
+  const { armWatchdog } = await import('../lib/server/outcome');
+  const { closingLine } = await import('../lib/server/guidance');
+  const { createSession, getSession } = await import('../lib/server/store');
+  const { POST: reportVerification } = await import('../app/api/tools/report-verification/route');
+  const { POST: stopConversation } = await import('../app/api/stop-conversation/route');
+
+  // Tool definition
+  const [tool] = verifierTools('https://gatekeeper.example.test');
+  assert(tool.function.name === 'reportVerification', 'Verifier should expose reportVerification');
+  assert(tool.server.url.startsWith('https://'), 'Verifier tool URL must be https');
+  assert(
+    tool.server.headers?.['x-tool-secret'] === '{{template_variables.tool_secret}}',
+    'Verifier tool secret must be a complete template_variables header value',
+  );
+
+  // Prompt safety: caller-controlled values cannot open a placeholder or break the prompt
+  assert(
+    !/[{}"\n]/.test(cleanVar('x {{session_id}} "quoted"\nnew line', 100)),
+    'cleanVar should strip braces, quotes and newlines',
+  );
+  assert(cleanVar('a'.repeat(500), 50).length === 50, 'cleanVar should bound the length');
+  assert(
+    VERIFIER_GREETING.includes('AI assistant'),
+    'The Verifier greeting must disclose that it is an AI',
+  );
+  assert(
+    VERIFIER_PROMPT.includes('AI assistant') && VERIFIER_PROMPT.includes('untrusted'),
+    'The Verifier prompt must disclose AI and treat the claim as untrusted',
+  );
+
+  // Closing line is nameless and fits the 512-byte speak limit
+  for (const v of [
+    'confirmed_safe_family_not_caller',
+    'family_confirms_call',
+    'unreachable',
+  ] as const) {
+    const line = closingLine(v);
+    assert(
+      !!line && Buffer.byteLength(line) <= 512 && !line.includes('Alex'),
+      `closing line for ${v} should be nameless and under 512 bytes`,
+    );
+  }
+  assert(closingLine('pending') === null, 'there is no closing line while pending');
+
+  // Claim derivation for the policy-triggered path
+  const claimless = createSession('verifier-derive-test', '1');
+  claimless.transcript.push({ speaker: 'caller', text: 'I need bail money', ts: 1 });
+  claimless.scamType = { label: 'Grandchild in trouble', p: 0.8 };
+  const derived = deriveClaim(claimless);
+  assert(
+    derived.claimedIdentity === 'a family member' && derived.claimSummary.includes('bail'),
+    'deriveClaim should fall back to scam type and the latest caller line',
+  );
+
+  // Launch is idempotent and records the mode and agent id
+  const session = createSession('verify-flow', '5');
+  session.grandmaAgentId = 'mock-grandma';
+  assert(await startVerification(session, 'policy') === true, 'first startVerification should start');
+  assert(await startVerification(session, 'tool') === false, 'second startVerification is a no-op');
+  await new Promise((r) => setTimeout(r, 10));
+  assert(
+    session.verifierMode === 'browser' &&
+      session.verifierAgentId === 'mock-verifier-id' &&
+      session.events.some((e) => e.type === 'calling_family'),
+    'launcher result should be recorded on the session',
+  );
+
+  // reportVerification: auth, validation, mapping, speak, idempotency
+  const spoken: { agentId: string; text: string; priority?: string }[] = [];
+  const { agoraClient } = await import('../lib/server/agents');
+  const agentsProto = Object.getPrototypeOf(agoraClient().agents) as {
+    speak: (req: { agentId: string; text: string; priority?: string }) => Promise<unknown>;
+  };
+  const originalSpeak = agentsProto.speak;
+  agentsProto.speak = async (req) => {
+    spoken.push(req);
+    return {};
+  };
+  const report = (payload: unknown, headers: Record<string, string> = TOOL_HEADERS) =>
+    reportVerification(
+      new Request('http://localhost:3000/api/tools/report-verification?session=verify-flow', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      }),
+    );
+
+  try {
+    assert((await report({ result: 'unclear', note: '' }, {})).status === 401, 'report should require the secret');
+    assert((await report({ result: 'maybe', note: '' })).status === 400, 'report should reject unknown results');
+    assert(session.verification === 'pending', 'a rejected report must not change the state');
+
+    const response = await report({
+      result: 'family_safe_did_not_call',
+      note: 'I am fine and did not call',
+    });
+    const body = await getJson(response);
+    assert(response.status === 200 && body.ok === true, 'report should succeed');
+    assert(
+      (session.verification as string) === 'confirmed_safe_family_not_caller' &&
+        session.verifyNote === 'I am fine and did not call' &&
+        session.metrics.verifyDoneAt !== undefined &&
+        session.events.some((e) => e.type === 'family_reached'),
+      'report should map the result and record the note and timing',
+    );
+    assert(
+      spoken.length === 1 &&
+        spoken[0].agentId === 'mock-grandma' &&
+        spoken[0].priority === 'INTERRUPT' &&
+        spoken[0].text === closingLine('confirmed_safe_family_not_caller'),
+      "report should push Grandma's closing line to her agent",
+    );
+
+    await report({ result: 'family_confirms_they_called', note: 'late' });
+    assert(
+      (session.verification as string) === 'confirmed_safe_family_not_caller' && spoken.length === 1,
+      'the first result wins; later reports are ignored',
+    );
+  } finally {
+    agentsProto.speak = originalSpeak;
+  }
+
+  // Watchdog: pending verification times out as unreachable
+  const slow = createSession('verify-watchdog', '6');
+  await startVerification(slow, 'tool');
+  armWatchdog(slow, 20);
+  await new Promise((r) => setTimeout(r, 80));
+  assert(
+    getSession('verify-watchdog')?.verification === 'unreachable' &&
+      slow.events.some((e) => e.type === 'verification_unclear'),
+    'the watchdog should mark unanswered verification unreachable',
+  );
+
+  // Stopping the Verifier must not end the caller's call; stopping Grandma ends it and stops both.
+  const call = createSession('verify-stop', '7');
+  call.grandmaAgentId = 'agent-g';
+  call.verifierAgentId = 'agent-v';
+  const stopped: string[] = [];
+  const originalStop = AgoraClient.prototype.stopAgent;
+  AgoraClient.prototype.stopAgent = async function (_agentId: string) {
+    stopped.push(_agentId);
+  } as typeof AgoraClient.prototype.stopAgent;
+  const stop = (agent_id: string) =>
+    stopConversation(
+      new NextRequest('http://localhost:3000/api/stop-conversation', {
+        method: 'POST',
+        body: JSON.stringify({ agent_id }),
+      }),
+    );
+  try {
+    await stop('agent-v');
+    assert(!call.endedAt, 'stopping the Verifier must not end the call');
+    await stop('agent-g');
+    assert(!!call.endedAt, 'stopping Grandma should end the call');
+    assert(
+      stopped.includes('agent-v') && stopped.includes('agent-g'),
+      'stopping Grandma should also stop the Verifier',
+    );
+  } finally {
+    AgoraClient.prototype.stopAgent = originalStop;
+  }
+}
+
 async function main() {
+  const { setVerifierLauncher } = await import('../lib/server/verifier');
+  // No test may start a real Verifier agent.
+  setVerifierLauncher({
+    mode: 'browser',
+    start: async () => ({ agentId: 'mock-verifier-id' }),
+  });
+
   await verifyGenerateAgoraTokenRoute();
   await verifyGenerateAgoraTokenReplacesZeroUid();
   await verifyChatCompletionsMissingEnv();
@@ -730,6 +904,7 @@ async function main() {
   await verifyInviteAgentRegistersSession();
   await verifyKeywordScorerAndPolicy();
   await verifyTranscriptAndStateRoutes();
+  await verifyVerifierFlow();
 
   console.log('API contract checks passed');
 }

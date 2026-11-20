@@ -25,6 +25,21 @@ export function guidanceFor(session: Pick<Session, 'verification' | 'riskLevel'>
   }
 }
 
+// Grandma's closing line, pushed through the speak endpoint when verification finishes.
+// Deliberately nameless (handoff section 20.2) and under the 512-byte speak limit.
+export function closingLine(verification: Session['verification']): string | null {
+  switch (verification) {
+    case 'confirmed_safe_family_not_caller':
+      return "Oh dear, I just checked with my family, and they're safe and say they didn't call me. I won't be sending anything. I'm hanging up now. Goodbye.";
+    case 'family_confirms_call':
+      return "My family says they'll handle this directly, so I won't send anything myself. Goodbye now, dear.";
+    case 'unreachable':
+      return "I couldn't reach my family just now, so I won't agree to anything. They'll call you back. Goodbye.";
+    default:
+      return null;
+  }
+}
+
 export function buildStatus(session: Session): ToolStatusResponse {
   return {
     risk_level: session.riskLevel,

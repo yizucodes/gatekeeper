@@ -7,6 +7,50 @@ import type { LlmTool } from 'agora-agents';
 
 const SECRET_HEADER = { 'x-tool-secret': '{{template_variables.tool_secret}}' };
 
+// Verifier tool: reports what the family member said. The session id is the GRANDMA session id
+// (passed as a template variable), not the verify channel name.
+export function verifierTools(baseUrl: string): LlmTool[] {
+  return [
+    {
+      type: 'function',
+      function: {
+        name: 'reportVerification',
+        description:
+          'Report the family member\'s answer. Call exactly once, as soon as you know whether they are safe and whether they made the call.',
+        parameters: {
+          type: 'object',
+          properties: {
+            result: {
+              type: 'string',
+              enum: ['family_safe_did_not_call', 'family_confirms_they_called', 'unclear'],
+              description:
+                'family_safe_did_not_call: they are safe and did NOT make the call. family_confirms_they_called: they really made the call. unclear: you cannot tell.',
+            },
+            note: {
+              type: 'string',
+              description: 'One short sentence with what the family member said.',
+            },
+          },
+          required: ['result', 'note'],
+          additionalProperties: false,
+        },
+      },
+      execution: { mode: 'sync' },
+      server: {
+        method: 'POST',
+        url: `${baseUrl}/api/tools/report-verification?session={{template_variables.session_id}}`,
+        headers: SECRET_HEADER,
+        body: {
+          result: '{{args.result}}',
+          note: '{{args.note}}',
+          tool_call_id: '{{tool_call_id}}',
+        },
+        timeout_ms: 5000,
+      },
+    },
+  ];
+}
+
 export function grandmaTools(baseUrl: string): LlmTool[] {
   return [
     {

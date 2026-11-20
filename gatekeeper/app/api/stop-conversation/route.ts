@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { StopConversationRequest } from '@/types/conversation';
 import { stopAgentSafe } from '@/lib/server/agents';
+import { clearWatchdog, stopVerifier } from '@/lib/server/outcome';
 import { endSession, findByAgentId } from '@/lib/server/store';
 
 export async function POST(request: Request) {
@@ -23,9 +24,16 @@ export async function POST(request: Request) {
       );
     }
 
-    // Mark the matching Gatekeeper call as ended (no-op for unknown agents).
+    // Mark the matching Gatekeeper call as ended (no-op for unknown agents). Stopping the Verifier
+    // agent (family page hang-up) must NOT end the caller's call, only stopping Grandma does.
     const gkSession = findByAgentId(agent_id);
-    if (gkSession) endSession(gkSession);
+    const stoppingGrandma = gkSession?.grandmaAgentId === agent_id;
+    if (gkSession && stoppingGrandma) {
+      endSession(gkSession);
+      clearWatchdog(gkSession.id);
+      // Best effort: the Verifier should not outlive the call. Never fails this request.
+      if (gkSession.verifierAgentId) await stopVerifier(gkSession);
+    }
 
     // Treat stop as idempotent: an agent that is already exiting (or gone) is a success.
     const result = await stopAgentSafe(agent_id);

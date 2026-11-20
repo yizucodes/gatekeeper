@@ -5,6 +5,7 @@ import { DashboardFooter } from '@/components/dashboard/DashboardFooter';
 import { EventTimeline } from '@/components/dashboard/EventTimeline';
 import { ScamMeter } from '@/components/dashboard/ScamMeter';
 import { TranscriptFeed } from '@/components/dashboard/TranscriptFeed';
+import { VerifiedCard } from '@/components/dashboard/VerifiedCard';
 import type { StateResponse } from '@/types/gatekeeper';
 
 const POLL_MS = 500;
@@ -65,6 +66,10 @@ export default function DashboardPage() {
         <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
           <TranscriptFeed lines={session.transcript} />
           <div className="flex min-h-0 flex-col gap-4 overflow-y-auto">
+            <VerifiedCard
+              session={session}
+              callUrlBase={state?.callUrl ? new URL(state.callUrl).origin : window.location.origin}
+            />
             <ScamMeter
               scores={session.scores}
               riskLevel={session.riskLevel}
