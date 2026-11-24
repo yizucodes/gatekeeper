@@ -1,10 +1,22 @@
-# Agora Conversational AI Next.js Quickstart
+# Gatekeeper
 
-[![Build](https://github.com/AgoraIO-Conversational-AI/agent-quickstart-nextjs/actions/workflows/build-check.yml/badge.svg)](https://github.com/AgoraIO-Conversational-AI/agent-quickstart-nextjs/actions/workflows/build-check.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](https://nodejs.org/)
+Gatekeeper is a voice agent that answers the phone for an older relative. A caller talks to "Grandma", an AI agent, in the browser. Gatekeeper scores what the caller says for scam signals (payment demands, secrecy, urgency, impersonation, requests for codes, prompt injection). When the score reaches red, a second AI agent calls a family member to check whether they really made the call. A live dashboard shows the transcript, the scam meter, the verification status and a timeline.
+
+Scoring is rule-based keyword matching, not a learned model. It is built on Agora's Conversational AI Next.js quickstart, which is what the rest of this README describes.
+
+## Agora Conversational AI Next.js Quickstart
 
 Build a production-style voice agent in minutes with Next.js and the Agora Conversational AI Engine, including voice agent visualizer ([Agent UIKit](https://agoraio-conversational-ai.github.io/agent-uikit/)), live transcript, and real-time pipeline latency via `AGENT_METRICS` ([Agent Toolkit](https://github.com/AgoraIO-Conversational-AI/agent-client-toolkit-ts)).
+
+## Demo (scripted replay)
+
+![Gatekeeper dashboard showing a red scam meter, the automatic verification event and operator controls](docs/images/dashboard-replay-scam.png)
+
+Dashboard after replaying a scripted scam scenario (typed text, operator controls on, not a live call).
+
+![Gatekeeper dashboard showing a green scam meter](docs/images/dashboard-replay-benign.png)
+
+Dashboard for a scripted benign scenario.
 
 ## Prerequisites
 
@@ -71,20 +83,6 @@ agora project doctor --deep
 pnpm dev
 ```
 
-### Deploy to Vercel
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FAgoraIO-Conversational-AI%2Fagent-quickstart-nextjs&project-name=agent-quickstart-nextjs&repository-name=agent-quickstart-nextjs&env=NEXT_PUBLIC_AGORA_APP_ID,NEXT_AGORA_APP_CERTIFICATE&envDescription=Agora%20credentials%20needed%20to%20run%20the%20app&envLink=https%3A%2F%2Fgithub.com%2FAgoraIO-Conversational-AI%2Fagent-quickstart-nextjs%23run-it&demo-title=Agora%20Conversational%20AI%20Next.js%20Quickstart&demo-description=Official%20Next.js%20quickstart%20for%20building%20browser-based%20voice%20AI%20with%20Agora&demo-image=https%3A%2F%2Fraw.githubusercontent.com%2FAgoraIO-Conversational-AI%2Fagent-quickstart-nextjs%2Fmain%2F.github%2Fassets%2FConversation-Ai-Client.gif)
-
-To populate Vercel env vars from your bound Agora project:
-
-```bash
-agora project use <your-project>
-agora project env write .env.local
-rg "^(NEXT_PUBLIC_AGORA_APP_ID|NEXT_AGORA_APP_CERTIFICATE)=" .env.local
-```
-
-Copy those two values into Vercel Project Settings -> Environment Variables.
-
 ### Environment variables
 
 Defined in [`env.local.example`](env.local.example).
@@ -100,7 +98,7 @@ Gatekeeper adds these (all optional, but the tools and the family call need the 
 | ---------------------------------------------- | :------: | ---------------------------------------------------------------------------------------------------------------------- |
 | `PUBLIC_BASE_URL`                              |    ⚠️    | Public **https** URL of this server (tunnel to `http://localhost:3000`), no trailing slash. Agora custom tools require it. Also used for the dashboard QR code. |
 | `TOOL_SECRET`                                  |    ⚠️    | Random value Agora sends in `x-tool-secret`; `/api/tools/*` reject anything else. Empty or `change-me` disables tools. |
-| `DEMO_GRANDMA_NAME` / `DEMO_FAMILY_NAME` / `DEMO_FAMILY_RELATION` |    -     | Demo persona (defaults Rosa / Alex / grandson). Never sent to Grandma's LLM.                                           |
+| `DEMO_GRANDMA_NAME` / `DEMO_FAMILY_NAME` / `DEMO_FAMILY_RELATION` |    -     | Demo persona (defaults Rosa / Alex / grandson). Grandma's own name goes into her prompt and greeting; the family name and relation never do.                                        |
 | `DEMO_MODE`                                    |    -     | `true` enables operator controls (`/dashboard?demo=1`, `POST /api/demo/simulate`). Leave unset on any public deployment. |
 | `AGORA_TELEPHONY_ENABLED`                      |    -     | Reserved for the outbound telephony adapter (not implemented; always falls back to the browser family call).           |
 
@@ -109,7 +107,7 @@ Run Gatekeeper as one local Node process (`pnpm dev`) behind an HTTPS tunnel. Se
 Gatekeeper commands: `pnpm eval` replays 13 scripted calls through the scorer and policy and writes `eval_results.md`. `pnpm harness --spawn` (after `pnpm build`) starts a server and plays the same 13 calls over HTTP through `/api/transcript`, the tool routes, state and the trail export; without `--spawn` it tests a server you already run (needs `DEMO_MODE=true` and `TOOL_SECRET`). It does not cover audio or the Agora agent join.
 Pages: `/call` (the caller), `/dashboard` (live view; add `?demo=1` for operator controls), `/family?session=<id>` (the family member's verification call).
 
-The default agent configuration in [`app/api/invite-agent/route.ts`](app/api/invite-agent/route.ts) uses Agora-managed STT, LLM, and TTS, so no extra vendor API keys are required for the base quickstart.
+The default agent configuration in [`lib/server/agents.ts`](lib/server/agents.ts) (started from [`app/api/invite-agent/route.ts`](app/api/invite-agent/route.ts)) uses Agora-managed STT, LLM, and TTS, so no extra vendor API keys are required for the base quickstart.
 
 ## Commands
 
@@ -156,9 +154,32 @@ The browser fetches a combined RTC + RTM token (`buildTokenWithRtm`) from this a
 4. The client receives transcript, agent state, and `AGENT_METRICS` (per-stage latency) events over RTM.
 5. On end, the client calls `/api/stop-conversation`, logs out RTM, and unmounts the call view so Agora React hooks clean up RTC publish/join and the local microphone track.
 
+### Gatekeeper call flow
+
+```mermaid
+flowchart TD
+  call["/call page"] -->|"POST /api/invite-agent"| grandma["Grandma agent"]
+  call -->|"completed turns, re-sent if the text is refined"| transcript["POST /api/transcript"]
+  transcript -->|"caller turns only, at most one run per 700 ms"| scoring["keyword scoring"]
+  scoring --> policy["policy: scores ratchet up, red starts verification"]
+  policy -->|"startVerification"| verifier["Verifier agent"]
+  family["/family page"] <-->|"RTC channel SESSION-verify"| verifier
+  verifier -->|"tool: reportVerification"| report["POST /api/tools/report-verification"]
+  report --> dashboard["/dashboard (polls /api/state every 500 ms)"]
+  policy -.->|"risk level, timeline events"| dashboard
+```
+
+Where each step lives in the code:
+
+- `/call` renders `LandingPage` ([`app/call/page.tsx`](app/call/page.tsx)), which posts to `/api/invite-agent` ([`components/LandingPage.tsx`](components/LandingPage.tsx)); the route starts the Grandma agent via `startGrandma` ([`app/api/invite-agent/route.ts`](app/api/invite-agent/route.ts), [`lib/server/agents.ts`](lib/server/agents.ts)).
+- The browser, not the agent, posts transcript turns: it skips `IN_PROGRESS` items, sends `END` and `INTERRUPTED` ones, and sends a turn again when its text changes ([`lib/transcript-forwarder.ts`](lib/transcript-forwarder.ts)). Caller turns trigger scoring; Grandma and family turns are dashboard-only ([`app/api/transcript/route.ts`](app/api/transcript/route.ts)).
+- Scoring is debounced to one run per 700 ms per session ([`lib/server/scoring.ts`](lib/server/scoring.ts)) and `getScorer()` always returns the keyword scorer ([`lib/server/risk.ts`](lib/server/risk.ts)).
+- Policy turns red into `startVerification` ([`lib/server/policy.ts`](lib/server/policy.ts)), which launches the Verifier agent in the `<session>-verify` channel ([`lib/server/verifier.ts`](lib/server/verifier.ts), `startVerifierAgent` in [`lib/server/agents.ts`](lib/server/agents.ts)). The family member joins the same channel from `/family?session=<id>` ([`components/FamilyLanding.tsx`](components/FamilyLanding.tsx)).
+- The Verifier reports through the `reportVerification` tool, which calls `finishVerification` ([`app/api/tools/report-verification/route.ts`](app/api/tools/report-verification/route.ts), [`lib/server/outcome.ts`](lib/server/outcome.ts)). The dashboard polls `/api/state` ([`app/dashboard/page.tsx`](app/dashboard/page.tsx), [`app/api/state/route.ts`](app/api/state/route.ts)).
+
 ## Optional BYOK
 
-The base `.env.local` contract contains only Agora credentials. If you are migrating from a supported provider, uncomment the matching snippet in [`app/api/invite-agent/route.ts`](app/api/invite-agent/route.ts) and add its variables to your local environment.
+The base `.env.local` contract contains only Agora credentials. There is no BYOK snippet in [`app/api/invite-agent/route.ts`](app/api/invite-agent/route.ts): the agent pipeline is built in [`lib/server/agents.ts`](lib/server/agents.ts) with Agora-managed STT, LLM and TTS. In this repo only the optional custom-LLM route (`app/api/chat/completions`, via [`lib/chat-completions.ts`](lib/chat-completions.ts)) reads `NEXT_LLM_URL` and `NEXT_LLM_API_KEY`; nothing reads the Deepgram or ElevenLabs variables below.
 
 ```bash
 # Deepgram STT
@@ -176,7 +197,7 @@ NEXT_ELEVENLABS_VOICE_ID=...
 ## Repo Map
 
 - `app/api/generate-agora-token/route.ts` — issues RTC + RTM tokens
-- `app/api/invite-agent/route.ts` — starts the agent session and configures the pipeline
+- `app/api/invite-agent/route.ts` — registers the call and starts the Grandma agent session (the pipeline is configured in `lib/server/agents.ts`)
 - `app/api/stop-conversation/route.ts` — stops the agent session (stopping Grandma also ends the call and stops the Verifier)
 - `app/api/tools/{check-status,request-verification,report-verification}/route.ts` — Agora custom tool endpoints (`x-tool-secret` required)
 - `app/api/transcript/route.ts`, `app/api/state/route.ts` — final-turn ingest and dashboard state polling
@@ -199,7 +220,7 @@ NEXT_ELEVENLABS_VOICE_ID=...
 - **`pnpm run doctor` fails:** run `agora project env write .env.local`, then retry.
 - **Manual clone / env values:** `agora project use <your-project>` then `agora project env write .env.local`.
 - **RTM login fails:** keep [`app/api/generate-agora-token/route.ts`](app/api/generate-agora-token/route.ts) on `RtcTokenBuilder.buildTokenWithRtm` — RTC-only tokens will not satisfy `rtm.login`.
-- **Transcript speakers inverted:** check the `uid === "0"` remap in [`components/ConversationComponent.tsx`](components/ConversationComponent.tsx).
+- **Transcript speakers inverted:** check the `uid === '0'` remap in `normalizeTranscript` ([`lib/conversation.ts`](lib/conversation.ts)), which [`components/ConversationComponent.tsx`](components/ConversationComponent.tsx) calls.
 - **Agent never appears in channel:** ensure the shared agent UID in [`lib/agora.ts`](lib/agora.ts) is used by both the client and invite route.
 
 ## More Docs
@@ -208,19 +229,6 @@ NEXT_ELEVENLABS_VOICE_ID=...
 - [docs/ai/RECIPE.md](./docs/ai/RECIPE.md)
 - [AGENTS.md](./AGENTS.md)
 
-## Contributing
-
-Pull requests welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup and conventions.
-
-## Security
-
-Please do **not** open public issues for security reports. Email security@agora.io with details and reproduction steps.
-
 ## License
 
 Released under the [MIT License](./LICENSE).
-
-
-## TODO
-
-Visualizer on what happens for SIE model router if implemented
