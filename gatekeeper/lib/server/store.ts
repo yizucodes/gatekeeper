@@ -92,8 +92,19 @@ export function addTranscript(
   speaker: Speaker,
   text: string,
   ts: number = Date.now(),
+  turnId?: string,
 ) {
-  session.transcript.push({ speaker, text, ts });
+  if (turnId) {
+    // Update the turn in place. Search from the end: a turn is almost always among the latest lines.
+    for (let i = session.transcript.length - 1; i >= 0; i--) {
+      const line = session.transcript[i];
+      if (line.speaker === speaker && line.turnId === turnId) {
+        line.text = text;
+        return;
+      }
+    }
+  }
+  session.transcript.push({ speaker, text, ts, ...(turnId ? { turnId } : {}) });
   if (session.transcript.length > MAX_TRANSCRIPT_LINES) session.transcript.shift();
 }
 

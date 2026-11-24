@@ -6,7 +6,8 @@ import type { Speaker } from '@/types/gatekeeper';
 const SPEAKERS: Speaker[] = ['caller', 'grandma', 'family'];
 const MAX_TEXT_LENGTH = 2000;
 
-// The browser forwards each FINAL turn here. Caller turns are scored (debounced) and fed to policy;
+// The browser forwards every text update of a turn here (optional turnId updates the line in place).
+// Caller turns are scored (debounced) and fed to policy;
 // grandma and family turns are dashboard-only.
 export async function POST(request: Request) {
   let body: Record<string, unknown>;
@@ -33,7 +34,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unknown session' }, { status: 404 });
   }
 
-  addTranscript(session, speaker, text, ts);
+  const turnId =
+    typeof body.turnId === 'string' && body.turnId.length > 0 ? body.turnId.slice(0, 64) : undefined;
+
+  addTranscript(session, speaker, text, ts, turnId);
   if (speaker === 'caller') scheduleScoring(session);
 
   return NextResponse.json({ ok: true });

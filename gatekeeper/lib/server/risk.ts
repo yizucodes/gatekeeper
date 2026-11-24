@@ -46,6 +46,11 @@ const RULES: KeywordRule[] = [
   { key: 'payment_demand', score: 0.85, pattern: /\b(send|give|wire|transfer|get|lend|loan|mail|venmo|zelle)\b\s+(?:[\w']+\s+){0,2}?(me|us)\s+(?:[\w']+,?\s+){0,3}?(money|cash|funds|dollars|bucks)\b|\bhelp me out with\b[^.?!]{0,20}\b(money|cash)\b/ },
   { key: 'payment_demand', score: 0.85, pattern: /safe account|move your (savings|money|funds)|transfer your (savings|money|funds)/ },
   { key: 'payment_demand', score: 0.55, pattern: /\$\s?\d{3,}/ },
+  // Spoken amounts. Speech recognition writes "two thousand", "a hundred", "five grand", not "$2000",
+  // so the `$\d` rules above never fire on live calls. A request verb near a spoken amount is a
+  // payment demand; the amount alone (below) is only a weak signal.
+  { key: 'payment_demand', score: 0.85, pattern: /\b(send|pay|need|owe|transfer|wire|get|buy|give|lend|loan|mail|venmo|zelle)\b[^.?!]{0,40}\b(hundred|thousand|grand|million|bucks|dollars?)\b/ },
+  { key: 'payment_demand', score: 0.55, pattern: /\b(a|one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\s+(hundred|thousand|grand)\b/ },
   // secrecy
   { key: 'secrecy', score: 0.9, pattern: /don'?t tell|do not tell|keep (this|it) (a )?(secret|quiet)|between us|nobody (needs to|can) know|keep this to yourself|(not|n't) (to )?(tell|mention)\b[^.?!]{0,25}(anyone|mom|dad|family|bank|police|kids)/ },
   // urgency
@@ -69,7 +74,7 @@ const RULES: KeywordRule[] = [
 ];
 
 const FAMILY_IDENTITY =
-  /it'?s me\b|this is (your )?(grandson|granddaughter|grandchild|son|daughter|nephew|niece)|grandma\?/;
+  /it'?s me\b|this is (your )?(grandson|granddaughter|grandchild|son|daughter|nephew|niece)|grandma[?,]?\s+it'?s\b|grandma\?/;
 const FAMILY_TROUBLE =
   /trouble|\bjail\b|arrest|\bpolice\b|accident|hospital|\bbail\b|lawyer|stranded|hurt|crash/;
 const ROMANCE = /sweetheart|my love|\bdarling\b|miss you|flight to see you/;
@@ -113,6 +118,10 @@ export function keywordScore(window: string): Pick<RiskResult, 'scores' | 'scamT
   }
   if (scores.injection >= 0.8) {
     candidates.push({ label: 'prompt injection attempt', p: scores.injection });
+  }
+  // A money demand with no other pattern must not read as "normal friendly call" next to a red badge.
+  if (scores.payment_demand >= 0.8 && candidates.length === 0) {
+    candidates.push({ label: 'urgent money request', p: scores.payment_demand });
   }
 
   let scamType: { label: string; p: number };

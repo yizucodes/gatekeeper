@@ -368,8 +368,9 @@ export default function ConversationComponent({
     return normalizeTranscript(rawTranscript, String(client.uid));
   }, [rawTranscript, client.uid]);
 
-  // Gatekeeper: forward final turns to the backend. The forwarder dedupes by uid:turn_id and lives
-  // in a ref (created once per session) so re-renders and StrictMode never re-send turns.
+  // Gatekeeper: forward turns to the backend. The forwarder re-sends a turn only when its text changed
+  // (speech recognition refines a turn in place) and lives in a ref (created once per session) so
+  // re-renders and StrictMode never re-send unchanged text.
   const forwarderRef = useRef<{
     sessionId: string;
     forward: ReturnType<typeof createTranscriptForwarder>;

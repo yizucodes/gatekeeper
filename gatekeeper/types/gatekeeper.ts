@@ -31,6 +31,9 @@ export interface TranscriptLine {
   speaker: Speaker;
   text: string;
   ts: number;
+  // Set for live-call lines. Later updates with the same speaker and turnId replace the text, because
+  // speech recognition refines a turn in place ("Grandma, it's" -> "Grandma, it's me, I need money").
+  turnId?: string;
 }
 
 export interface GkEvent {

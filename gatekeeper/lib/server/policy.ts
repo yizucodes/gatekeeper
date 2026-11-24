@@ -90,9 +90,16 @@ export async function applyPolicy(
   session.scorer = scored.scorer;
   if (scored.latencyMs !== undefined) session.metrics.scoreLatencyMs = scored.latencyMs;
   if (scored.scamType) {
-    // A benign read never overwrites a scam type that was already detected in this call.
+    // A benign read never overwrites a scam type that was already detected in this call, and a
+    // weaker scam type never replaces a stronger one. The scoring window slides, so once "it's me"
+    // falls out of it, a family-emergency call would otherwise relabel itself as "law enforcement"
+    // (from "arrested" alone).
     const benign = scored.scamType.label === 'normal friendly call';
-    if (!session.scamType || !benign) session.scamType = scored.scamType;
+    const current = session.scamType;
+    const currentIsScam = !!current && current.label !== 'normal friendly call';
+    if (!current || (!benign && (!currentIsScam || scored.scamType.p >= current.p))) {
+      session.scamType = scored.scamType;
+    }
   }
 
   const result = evaluate(session.scores, thresholds);
